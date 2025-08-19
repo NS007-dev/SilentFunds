@@ -23,4 +23,21 @@ Line 2: the window title
 Line 3: sets the width and height of window
 Line 4: keeps track of time and the fps.
 
+player = pygame.Rect(WIDTH//2, HEIGHT//2, 40, 40)
 
+
+Makes rectangle/player at centre of screen at 40x40 pixels size.
+
+keys = pygame.key.get_pressed()
+if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+    player.x -= PLAYER_SPEED * dt
+
+
+Function get_pressed() shows keys being currently held and what direction to move
+
+screen.fill((12, 12, 16))
+pygame.draw.rect(screen, (200, 50, 50), player)
+pygame.display.flip()
+
+
+.fill is for the background, then ,draw is the character, then .flip() is to update screen
