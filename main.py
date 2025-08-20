@@ -1,170 +1,239 @@
 import pygame
 import sys
 
-WIDTH, HEIGHT = 320 * 3, 180 * 3
-FPS = 60
-PLAYER_SPEED = 200
+# Initialize pygame
+pygame.init()
 
+# Screen setup
+WIDTH, HEIGHT = 640, 480
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Silent Funds - School Mystery")
+clock = pygame.time.Clock()
 
-def main():
-    pygame.init()
-    pygame.display.set_caption("Silent Funds — Step 9")
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    clock = pygame.time.Clock()
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+BLUE = (0, 0, 255)
+RED = (255, 0, 0)
+GREEN = (0, 200, 0)
 
-    font = pygame.font.SysFont("Arial", 24)
+# Player setup
+player = pygame.Rect(50, 200, 40, 40)
+player_speed = 4
 
-    player = pygame.Rect(WIDTH//2, HEIGHT//2, 40, 40)
+# Game state
+inventory = []
+current_room = "lobby"
+interacting = False
+active_message = None
+active_choices = {}
+interaction_type = None
+interaction_data = None
+interaction_ready = True  # cooldown for key press
 
-    walls = [
-        pygame.Rect(100, 100, 760, 20),
-        pygame.Rect(100, 420, 760, 20),
-        pygame.Rect(100, 120, 20, 300),
-        pygame.Rect(840, 120, 20, 300),
-    ]
-
-    # --- Choices memory ---
-    player_choices = {}  # stores what the player picked
-
-    # --- Clues ---
-    clues = [
-        {
-            "rect": pygame.Rect(200, 200, 20, 20),
-            "message": "A torn note lies here. What will you do?",
-            "choices": {
-                "1": "Read it carefully.",
-                "2": "Pocket it quickly.",
-                "3": "Ignore it."
-            },
-            "id": "note",
-            "collected": False
-        },
-        {
-            "rect": pygame.Rect(600, 250, 20, 20),
-            "message": "You find a key on the ground. Action?",
-            "choices": {
-                "1": "Take the key.",
-                "2": "Leave it.",
-                "3": "Look around suspiciously."
-            },
-            "id": "key",
-            "collected": False
-        },
-    ]
-
-    npc = {
-        "rect": pygame.Rect(400, 300, 40, 60),
-        "name": "Mysterious Stranger",
-        "dialogue": "I saw what you did earlier...",
-        "followup": {
-            "note": {
-                "Read it carefully.": "So, you like details... be cautious.",
-                "Pocket it quickly.": "Greedy, huh? That might cost you later.",
-                "Ignore it.": "Strange... ignoring clues won't save you."
-            },
-            "key": {
-                "Take the key.": "Keys open doors... or trouble.",
-                "Leave it.": "Sometimes leaving things is wise.",
-                "Look around suspiciously.": "Paranoia is healthy here."
-            }
-        }
+# --- SCHOOL MAP ---
+rooms = {
+    "lobby": {
+        "npcs": [],
+        "clues": [],
+        "doors": [{"rect": pygame.Rect(580, 200, 40, 80), "target": "hallway", "spawn": (50, 200)}]
+    },
+    "hallway": {
+        "npcs": [pygame.Rect(300, 200, 40, 40)],
+        "clues": [{"rect": pygame.Rect(200, 350, 30, 30),
+                   "message": "You find a crumpled school schedule. Take it?",
+                   "choices": {"1": "Take schedule", "2": "Leave it", "3": "Ignore it"},
+                   "collected": False}],
+        "doors": [
+            {"rect": pygame.Rect(0, 200, 40, 80),
+             "target": "lobby", "spawn": (540, 200)},
+            {"rect": pygame.Rect(580, 150, 40, 80),
+             "target": "classroom_a", "spawn": (50, 150)},
+            {"rect": pygame.Rect(580, 300, 40, 80),
+             "target": "cafeteria", "spawn": (50, 300)},
+            {"rect": pygame.Rect(280, 0, 80, 40),
+             "target": "gym", "spawn": (280, 440)},
+            {"rect": pygame.Rect(
+                500, 0, 80, 40), "target": "principal_office", "spawn": (100, 400)}
+        ]
+    },
+    "classroom_a": {
+        "npcs": [pygame.Rect(400, 300, 40, 40)],
+        "clues": [{"rect": pygame.Rect(250, 250, 30, 30),
+                   "message": "A doodle on the desk says: 'Meet me in the gym at midnight'. Take it?",
+                   "choices": {"1": "Take note", "2": "Leave it", "3": "Ignore it"},
+                   "collected": False}],
+        "doors": [{"rect": pygame.Rect(0, 150, 40, 80), "target": "hallway", "spawn": (540, 150)}]
+    },
+    "classroom_b": {
+        "npcs": [pygame.Rect(350, 250, 40, 40)],
+        "clues": [{"rect": pygame.Rect(200, 200, 30, 30),
+                   "message": "You see a shiny brass key on the desk. Take it?",
+                   "choices": {"1": "Take key", "2": "Leave it", "3": "Ignore it"},
+                   "collected": False}],
+        "doors": [{"rect": pygame.Rect(0, 200, 40, 80), "target": "hallway", "spawn": (540, 200)}]
+    },
+    "cafeteria": {
+        "npcs": [pygame.Rect(300, 250, 40, 40), pygame.Rect(350, 350, 40, 40)],
+        "clues": [],
+        "doors": [
+            {"rect": pygame.Rect(0, 300, 40, 80),
+             "target": "hallway", "spawn": (540, 300)},
+            {"rect": pygame.Rect(580, 300, 40, 80),
+             "target": "classroom_b", "spawn": (50, 200)}
+        ]
+    },
+    "principal_office": {
+        "npcs": [pygame.Rect(400, 200, 40, 40)],
+        "clues": [{"rect": pygame.Rect(250, 250, 30, 30),
+                   "message": "You discover a secret basement hatch. Open it?",
+                   "choices": {"1": "Open hatch", "2": "Leave it", "3": "Ignore it"},
+                   "collected": False}],
+        "doors": [
+            {"rect": pygame.Rect(100, 440, 80, 40),
+             "target": "hallway", "spawn": (500, 100)},
+            {"rect": pygame.Rect(300, 440, 80, 40),
+             "target": "basement", "spawn": (300, 50)}
+        ]
+    },
+    "gym": {
+        "npcs": [],
+        "clues": [],
+        "doors": [{"rect": pygame.Rect(280, 440, 80, 40), "target": "hallway", "spawn": (280, 50)}]
+    },
+    "basement": {
+        "npcs": [pygame.Rect(300, 300, 40, 40)],
+        "clues": [{"rect": pygame.Rect(350, 350, 30, 30),
+                   "message": "A ledger titled 'Silent Funds' lies here. Take it?",
+                   "choices": {"1": "Take ledger", "2": "Leave it", "3": "Ignore it"},
+                   "collected": False}],
+        "doors": [{"rect": pygame.Rect(300, 0, 80, 40), "target": "principal_office", "spawn": (300, 400)}]
     }
+}
 
-    current_message = None
-    current_choices = None
-    choice_result = None
-    talking_to_npc = False
-
-    running = True
-    while running:
-        dt = clock.tick(FPS) / 1000.0
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
-
-            elif event.type == pygame.KEYDOWN and current_choices:
-                if event.unicode in current_choices:
-                    choice_result = current_choices[event.unicode]
-                    current_message = f"You chose: {choice_result}"
-                    player_choices[active_id] = choice_result  # save choice
-                    current_choices = None
-
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                if current_message and not current_choices:
-                    current_message = None
-                    choice_result = None
-                    talking_to_npc = False
-
-        keys = pygame.key.get_pressed()
-        dx, dy = 0, 0
-        if not current_message:  # stop movement during dialogue
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                dx = -PLAYER_SPEED * dt
-            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                dx = PLAYER_SPEED * dt
-            if keys[pygame.K_UP] or keys[pygame.K_w]:
-                dy = -PLAYER_SPEED * dt
-            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-                dy = PLAYER_SPEED * dt
-
-        player.x += dx
-        player.y += dy
-
-        for wall in walls:
-            if player.colliderect(wall):
-                player.x -= dx
-                player.y -= dy
-                break
-
-        for clue in clues:
-            if not clue["collected"] and player.colliderect(clue["rect"]):
-                clue["collected"] = True
-                current_message = clue["message"]
-                current_choices = clue["choices"]
-                active_id = clue["id"]
-
-        if player.colliderect(npc["rect"]) and not talking_to_npc:
-            talking_to_npc = True
-            current_message = npc["dialogue"]
-
-            for clue_id, result in player_choices.items():
-                if clue_id in npc["followup"] and result in npc["followup"][clue_id]:
-                    current_message = npc["followup"][clue_id][result]
-                    break  # first relevant response wins
-
-        screen.fill((20, 20, 30))
-        pygame.draw.rect(screen, (200, 50, 50), player)
-        for wall in walls:
-            pygame.draw.rect(screen, (80, 80, 120), wall)
-        for clue in clues:
-            if not clue["collected"]:
-                pygame.draw.rect(screen, (240, 230, 100), clue["rect"])
-        pygame.draw.rect(screen, (50, 200, 50), npc["rect"])  # NPC visible
-
-        if current_message:
-            box = pygame.Rect(50, HEIGHT - 150, WIDTH - 100, 130)
-            pygame.draw.rect(screen, (0, 0, 0), box)
-            pygame.draw.rect(screen, (255, 255, 255), box, 3)
-
-            text = font.render(current_message, True, (255, 255, 255))
-            screen.blit(text, (box.x + 15, box.y + 15))
-
-            if current_choices:  # list all options
-                y_offset = 50
-                for key, option in current_choices.items():
-                    option_text = font.render(
-                        f"{key}: {option}", True, (200, 200, 200))
-                    screen.blit(option_text, (box.x + 15, box.y + y_offset))
-                    y_offset += 30
-
-        pygame.display.flip()
-
-    pygame.quit()
-    sys.exit()
+# --- FUNCTIONS ---
 
 
-if __name__ == "__main__":
-    main()
+def draw_text(text, x, y, color=BLACK):
+    font = pygame.font.Font(None, 28)
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        surface = font.render(line, True, color)
+        screen.blit(surface, (x, y + i * 30))
+
+
+def interact_with_npc():
+    global interacting, active_message, active_choices, interaction_type
+    active_message = "The person looks at you suspiciously...\n1. Ask about rumors\n2. Stay quiet\n3. Leave"
+    active_choices = {"1": "They whisper: 'Check the gym at night.'",
+                      "2": "They ignore you.", "3": "You walk away."}
+    interaction_type = "npc"
+    interacting = True
+
+
+def interact_with_clue(clue):
+    global interacting, active_message, active_choices, interaction_type, interaction_data
+    active_message = clue["message"]
+    active_choices = clue["choices"]
+    interaction_type = "clue"
+    interaction_data = clue
+    interacting = True
+
+
+def process_choice(choice):
+    global interacting, active_message, inventory, interaction_data
+    if choice in active_choices:
+        response = active_choices[choice]
+        if interaction_type == "npc":
+            active_message = response
+        elif interaction_type == "clue":
+            active_message = response
+            if choice == "1" and not interaction_data["collected"]:
+                inventory.append(response.split()[1])
+                interaction_data["collected"] = True
+    else:
+        active_message = "Invalid choice."
+    if choice == "3":
+        interacting = False
+
+
+# --- MAIN LOOP ---
+running = True
+while running:
+    clock.tick(30)
+    screen.fill(WHITE)
+
+    keys = pygame.key.get_pressed()
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN and interacting:
+            if event.unicode in active_choices:
+                process_choice(event.unicode)
+
+    # Player movement
+    if not interacting:
+        if keys[pygame.K_LEFT]:
+            player.x -= player_speed
+        if keys[pygame.K_RIGHT]:
+            player.x += player_speed
+        if keys[pygame.K_UP]:
+            player.y -= player_speed
+        if keys[pygame.K_DOWN]:
+            player.y += player_speed
+
+    # Interaction cooldown reset
+    if not keys[pygame.K_e]:
+        interaction_ready = True
+
+    # Keep player inside screen
+    player.x = max(0, min(WIDTH - player.width, player.x))
+    player.y = max(0, min(HEIGHT - player.height, player.y))
+
+    room = rooms[current_room]
+
+    # NPC interaction
+    for npc in room["npcs"]:
+        if not hasattr(npc, "interacted"):
+            npc.interacted = False
+        pygame.draw.rect(screen, BLUE, npc)
+        if player.colliderect(npc) and keys[pygame.K_e] and not interacting and not npc.interacted and interaction_ready:
+            interact_with_npc()
+            npc.interacted = True
+            interaction_ready = False
+
+    # Clue interaction
+    for clue in room["clues"]:
+        if not hasattr(clue, "interacted"):
+            clue.interacted = False
+        if not clue["collected"]:
+            pygame.draw.rect(screen, GREEN, clue["rect"])
+        if player.colliderect(clue["rect"]) and keys[pygame.K_e] and not interacting and not clue.interacted:
+            interact_with_clue(clue)
+            clue.interacted = True
+            interaction_ready = False
+
+    # Door interaction
+    for door in room["doors"]:
+        pygame.draw.rect(screen, RED, door["rect"])
+        if player.colliderect(door["rect"]) and not interacting:
+            current_room = door["target"]
+            player.topleft = door["spawn"]
+
+    # Draw player
+    pygame.draw.rect(screen, BLACK, player)
+
+    # Interaction box
+    if interacting:
+        pygame.draw.rect(screen, WHITE, (50, 350, 540, 120))
+        pygame.draw.rect(screen, BLACK, (50, 350, 540, 120), 2)
+        draw_text(active_message, 60, 360)
+
+    # Inventory display
+    draw_text("Inventory: " + ", ".join(inventory), 10, 10)
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
